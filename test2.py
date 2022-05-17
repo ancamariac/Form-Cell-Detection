@@ -16,11 +16,6 @@ def detect_box(image,line_min_width=15):
     ret, labels, stats,centroids = cv2.connectedComponentsWithStats(~img_bin_final, connectivity=8, ltype=cv2.CV_32S)
     return stats,labels
 
-def plot(image,cmap=None):
-    plt.figure(figsize=(15,15))
-    plt.imshow(image,cmap=cmap)
-    plt.show()
-
 def imshow_components(labels):
     ### creating a hsv image, with a unique hue value for each label
     label_hue = np.uint8(179*labels/np.max(labels))
@@ -118,15 +113,66 @@ def pretty_print(form):
             print("option " + chr(option + 65) + ": " + str(element))
         print("\n")
 
+def update_form(image, form, checkboxes):
+    counter = 0
+    for box in checkboxes:
+        check = check_ticked(image, box)
+        if check == True:
+            posx, posy = pos_to_index(form, counter)
+            form[posx][posy] += 1
+        counter += 1
+    return form
+
+def align_images(image, template, maxFeatures=500, keepPercent=0.2):
+	# convert both the input image and template to grayscale
+	imageGray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+	templateGray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+    # use ORB to detect keypoints and extract (binary) local
+	# invariant features
+	orb = cv2.ORB_create(maxFeatures)
+	(kpsA, descsA) = orb.detectAndCompute(imageGray, None)
+	(kpsB, descsB) = orb.detectAndCompute(templateGray, None)
+	# match the features
+	method = cv2.DESCRIPTOR_MATCHER_BRUTEFORCE_HAMMING
+	matcher = cv2.DescriptorMatcher_create(method)
+	matches = matcher.match(descsA, descsB, None)
+
+    # sort the matches by their distance (the smaller the distance,
+	# the "more similar" the features are)
+	matches = sorted(matches, key=lambda x:x.distance)
+	# keep only the top matches
+	keep = int(len(matches) * keepPercent)
+	matches = matches[:keep]
+
+    # allocate memory for the keypoints (x, y)-coordinates from the
+	# top matches -- we'll use these coordinates to compute our
+	# homography matrix
+	ptsA = np.zeros((len(matches), 2), dtype="float")
+	ptsB = np.zeros((len(matches), 2), dtype="float")
+	# loop over the top matches
+	for (i, m) in enumerate(matches):
+		# indicate that the two keypoints in the respective images
+		# map to each other
+		ptsA[i] = kpsA[m.queryIdx].pt
+		ptsB[i] = kpsB[m.trainIdx].pt
+    
+    # compute the homography matrix between the two sets of matched
+	# points
+	(H, mask) = cv2.findHomography(ptsA, ptsB, method=cv2.RANSAC)
+	# use the homography matrix to align the images
+	(h, w) = template.shape[:2]
+	aligned = cv2.warpPerspective(image, H, (w, h))
+	# return the aligned image
+	return aligned
+
+
+from skimage.metrics import structural_similarity
 
 def main():
     image_path='Capture4_comp.PNG'
     image=cv2.imread(image_path)
-    height, width, channels = image.shape
-    stats,labels=detect_box(image, line_min_width=1)
+    stats,_=detect_box(image, line_min_width=1)
 
-    plot_flag=False
-    save_output=True
     out_folder='outs'
     os.makedirs(out_folder,exist_ok=True)
 
@@ -134,24 +180,20 @@ def main():
     form = get_form_shape(checkboxes)
     image_path2 = 'Capture4.PNG'
     image2=cv2.imread(image_path2)
-    gray = cv2.cvtColor(image2, cv2.COLOR_BGR2GRAY)
-
-    counter = 0
-    for box in checkboxes:
-        check = check_ticked(gray, box)
-        if check == True:
-            posx, posy = pos_to_index(form, counter)
-            form[posx][posy] += 1
-        counter += 1
-    
+    aligned_im2 = align_images(image2, image)
+    gray = cv2.cvtColor(aligned_im2, cv2.COLOR_BGR2GRAY)
+    form = update_form(gray, form, checkboxes)
     pretty_print(form)
-    if plot_flag:
-        #plot(cc_out)
-        plot(image)
-    if save_output:
-        #cv2.imwrite(os.path.join(out_folder,f'cc_{image_path}'),cc_out)
-        cv2.imwrite(os.path.join(out_folder,f'out_{image_path}'),image)
 
+    orig_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    (score, diff) = structural_similarity(orig_gray, gray, full=True)
+    diff = (diff * 255).astype("uint8")
+    print("Image Similarity: {:.4f}%".format(score * 100))
+
+    cv2.imshow('diff', diff)
+    cv2.waitKey()
+
+    cv2.imwrite(os.path.join(out_folder,f'out_{image_path}'),image)
 
 if __name__ == "__main__":
     main()
