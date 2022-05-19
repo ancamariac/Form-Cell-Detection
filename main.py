@@ -1,8 +1,9 @@
 import os
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
+import sys
 from skimage.metrics import structural_similarity
+from pdf2image import convert_from_path
 
 def detect_box(image,line_min_width=15):
     gray_scale=cv2.cvtColor(image,cv2.COLOR_BGR2GRAY)
@@ -77,7 +78,7 @@ def get_checkboxes(image, stats):
         result.append([x,y,w,h])
     return result
 
-def get_form_shape(checkboxes, threshold = 10):
+def get_form_shape(checkboxes, threshold = 30):
     rows = []
     last_y = -11
     i = -1
@@ -179,15 +180,13 @@ def get_orig(image):
             res = elem
     return res
 
-def main():
+def pdf2img(pdf):
+    # Store Pdf with convert_from_path function
+    images = convert_from_path(pdf)
+    return images
 
-    out_folder='outs'
-    os.makedirs(out_folder, exist_ok=True)
-
-    image_path = 'Capture4.PNG'
-    
-    to_scan = cv2.imread(image_path)
-    path = get_orig(to_scan)
+def process_page(image, form_id, page_number):
+    path = f'{form_id}_{page_number}.jpg'
     print(path)
 
     orig_path = os.path.join('original', path)
@@ -196,13 +195,13 @@ def main():
     template = cv2.imread(template_path)
     original = cv2.imread(orig_path)
 
-    to_scan = align_images(to_scan, original)
+    to_scan = align_images(image, original)
     original = cv2.cvtColor(original, cv2.COLOR_BGR2GRAY)
 
     red_box = get_red_box(template)
     gray_scan = cv2.cvtColor(to_scan, cv2.COLOR_BGR2GRAY)
 
-    stats,_=detect_box(red_box, line_min_width=5)
+    stats,_ = detect_box(red_box, line_min_width=5)
     checkboxes = get_checkboxes(to_scan, stats)
 
     form = get_form_shape(checkboxes) #init form
@@ -210,7 +209,31 @@ def main():
     checkboxes = sort_checkboxes(checkboxes, form)
     checkboxes_perc = checkbox_percentage(original, checkboxes)
     
-    form = update_form(gray_scan, form, checkboxes, checkboxes_perc, image_path) #update form
+    form = update_form(gray_scan, form, checkboxes, checkboxes_perc, path) #update form
+    
+    return form
+
+def main():
+
+    args = sys.argv[1:]
+    image_path = args[0]
+
+    out_folder='outs'
+    os.makedirs(out_folder, exist_ok=True)
+    
+    # input: pdf -> transformare in imagini
+    # vedem carui formular ii corespunde dupa numarul de pagini
+    # pentru fiecare pagina -> aplica alg
+    
+    images = pdf2img(image_path)
+    forms = []
+    
+    i = 0
+    for image in images:
+        form = process_page(image, "page", i)
+        i += 1
+        forms.append(form)
+    
     pretty_print(form)
     """
     (score, diff) = structural_similarity(original, gray_scan, full=True)
