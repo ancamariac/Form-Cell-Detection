@@ -13,7 +13,7 @@ def detect_box(image,line_min_width = 15):
     img_bin_final=img_bin_h|img_bin_v
     final_kernel = np.ones((3, 3), np.uint8)
     img_bin_final=cv2.dilate(img_bin_final,final_kernel,iterations=1)
-    ret, labels, stats,centroids = cv2.connectedComponentsWithStats(~img_bin_final, connectivity=8, ltype=cv2.CV_32S)
+    _, labels, stats,_ = cv2.connectedComponentsWithStats(~img_bin_final, connectivity=8, ltype=cv2.CV_32S)
     return stats,labels
 
 def plot(image,cmap=None):
