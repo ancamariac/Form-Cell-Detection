@@ -32,6 +32,7 @@ def imshow_components(labels):
     labeled_img[label_hue==0] = 0
     ### returning the color image for visualising Connected Componenets
     return labeled_img
+    
 
 def check_ticked(image, checkbox, threshold = 127):
     x,y,w,h = checkbox
